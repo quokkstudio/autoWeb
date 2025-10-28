@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Auto Web</title>
+  <meta name="description" content="ChatGPT로 PR→자동 머지→자동 배포되는 정적 사이트" />
+  <link rel="icon" href="/favicon.ico" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="wrap">
+    <h1>Auto Web</h1>
+    <p>수정완료 ✅</p>
+  </header>
+  <main class="wrap">
+    <button id="btn">배포 테스트</button>
+    <p id="msg">버튼을 눌러봐요!</p>
+  </main>
+  <footer class="wrap">
+    <small>© <span id="yr"></span> Quokk Studio</small>
+  </footer>
+  <script>
+    document.getElementById('btn').onclick = () => {
+      document.getElementById('msg').textContent = '새 PR도 바로 배포돼요 🚀';
+    };
+    document.getElementById('yr').textContent = new Date().getFullYear().toString().slice(-2);
+  </script>
+</body>
+</html>

@@ -1,0 +1,49 @@
+name: automerge
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, edited]
+    branches: [main]
+  check_suite:
+    types: [completed]
+  workflow_run:
+    workflows: ["ci"]
+    types: [completed]
+
+permissions:
+  contents: write
+  pull-requests: write
+  checks: read
+  statuses: read
+
+jobs:
+  auto-merge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Auto-merge when checks pass
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const allowed = ['CONTRIBUTOR','MEMBER','OWNER','COLLABORATOR'];
+            const pr = context.payload.pull_request;
+            if (!pr) { core.info('No PR in context.'); return; }
+            if (!allowed.includes(pr.author_association)) {
+              core.info(`Skip: author_association ${pr.author_association} not allowed`);
+              return;
+            }
+            const { data: st } = await github.repos.getCombinedStatusForRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: pr.head.sha
+            });
+            if (st.state !== 'success') {
+              core.info(`Checks not successful (${st.state}). Exiting.`);
+              return;
+            }
+            await github.pulls.merge({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pr.number,
+              merge_method: 'squash'
+            });
+            core.info('Merged by workflow.');

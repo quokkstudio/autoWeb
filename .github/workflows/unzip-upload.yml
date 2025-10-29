@@ -1,0 +1,103 @@
+name: unzip-upload
+
+on:
+  push:
+    branches: ['drop']
+    paths:
+      - '*.zip'
+      - '**/*.zip'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  unpack-and-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout drop branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Stash ZIPs from drop into /tmp/zips
+        run: |
+          mkdir -p /tmp/zips
+          set -e
+          found=0
+          while IFS= read -r -d '' f; do
+            cp -f "$f" /tmp/zips/
+            echo "Found: $f"
+            found=1
+          done < <(find . -type f -name '*.zip' -print0)
+          if [ "$found" = 0 ]; then
+            echo 'No zip files found in drop commit.'
+            exit 1
+          fi
+
+      - name: Create import branch from main
+        run: |
+          git fetch origin main
+          git checkout -b import/zip-${{ github.run_id }} origin/main
+
+      - name: Unzip into temporary directory
+        run: |
+          mkdir -p /tmp/unzip
+          shopt -s nullglob
+          for z in /tmp/zips/*.zip; do
+            echo "Unzipping $z ..."
+            unzip -o "$z" -d /tmp/unzip
+          done
+
+      - name: Copy files into repo (preserve existing; rename index.html if occupied)
+        shell: bash
+        run: |
+          set -e
+          cd "$GITHUB_WORKSPACE"
+          rsync -a --prune-empty-dirs /tmp/unzip/ ./_incoming/ || true
+          cd ./_incoming || exit 0
+          mapfile -t files < <(find . -type f -print)
+          cd ..
+          for p in "${files[@]}"; do
+            src="_incoming/${p#./}"
+            dst="${p#./}"
+            mkdir -p "$(dirname "$dst")"
+            if [ -f "$dst" ]; then
+              base="$(basename "$dst")"
+              if [ "$base" = "index.html" ]; then
+                dst="$(dirname "$dst")/index_convil.html"
+                echo "Conflict on index.html → using $dst"
+                cp -f "$src" "$dst"
+              else
+                echo "Skip existing: $dst"
+                continue
+              fi
+            else
+              cp -f "$src" "$dst"
+            fi
+          done
+          rm -rf _incoming
+
+      - name: Commit changes (if any)
+        run: |
+          git add .
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+          git config user.name "zip-unpacker-bot"
+          git config user.email "bot@example.com"
+          git commit -m "feat: import ZIP from drop branch (preserve existing, add index_convil.html if conflicted)"
+          git push origin HEAD
+
+      - name: Open Pull Request via API
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          title="feat: import ZIP to root (auto)"
+          body="Imported ZIP from drop branch. Existing files preserved; index.html renamed to index_convil.html when conflicted."
+          head="import/zip-${{ github.run_id }}"
+          base="main"
+          api="https://api.github.com/repos/${{ github.repository }}/pulls"
+          data=$(printf '{"title":%q,"body":%q,"head":%q,"base":%q}' "$title" "$body" "$head" "$base")
+          curl -sS -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" --data "$data" "$api"
